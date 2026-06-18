@@ -48,10 +48,12 @@ async function chat(messages, modelKind = 'generate') {
       'Authorization': `Bearer ${s.azureApiKey}`,
       'Content-Type': 'application/json',
     },
+    // Note: temperature is intentionally omitted. Some Foundry models (e.g. the newer
+    // reasoning models) reject any non-default temperature with a 400, so we send none
+    // and let the deployment use its default.
     body: JSON.stringify({
       model: deployment,
       messages,
-      temperature: modelKind === 'feedback' ? 0.2 : 0.4,
     }),
   });
 
