@@ -84,7 +84,18 @@ function parseJSON(text) {
   }
 }
 
-const JSON_RULE = 'Return STRICT JSON only. No markdown, no code fences, no commentary.';
+const JSON_RULE = 'Gib AUSSCHLIESSLICH valides JSON zurück. Kein Markdown, keine Code-Fences, keine Kommentare.';
+
+// Gemeinsame Sprach-Anweisung: europäisches Spanisch aus Spanien (Kastilisch),
+// korrekt, aber sehr umgangssprachlich und alltagstauglich.
+const SPAIN =
+  'Es geht ausschließlich um europäisches Spanisch aus Spanien (Kastilisch). ' +
+  'Nutze die in Spanien übliche Wortwahl und Grammatik (z. B. die vosotros-Form, ' +
+  '„coche", „móvil", „ordenador", „vale", „guay", „tío/tía", „flipar"), niemals ' +
+  'lateinamerikanisches Spanisch (kein „carro", „celular", „ustedes" für Freunde). ' +
+  'Das Spanisch soll grammatikalisch korrekt sein, aber gleichzeitig sehr ' +
+  'umgangssprachlich und alltagstauglich, genau so, wie junge Leute in Spanien ' +
+  'im echten Alltag wirklich sprechen. Steife Lehrbuchsätze vermeiden.';
 
 // ---- Task 8: auto-fill a card from a Spanish word/sentence on the front ----
 export async function autofillCard(front, { nativeLang = 'de', targetLang = 'es' } = {}) {
@@ -92,13 +103,14 @@ export async function autofillCard(front, { nativeLang = 'de', targetLang = 'es'
     {
       role: 'system',
       content:
-        `You help build Spanish (${targetLang}) flashcards for a native ${nativeLang} speaker. ` +
-        `Given a Spanish word or sentence, produce its German translation and helpful fields. ` +
-        `${JSON_RULE} Use this exact schema: ` +
-        `{"back": string (German translation), "gender": "el"|"la"|null (only for nouns), ` +
-        `"example": string|null (a short natural Spanish example sentence), ` +
-        `"exampleTrans": string|null (German translation of the example), ` +
-        `"notes": string|null (a brief grammar hint if useful), ` +
+        `Du hilfst beim Erstellen von Spanisch-Lernkarten für einen deutschen Muttersprachler. ` +
+        `${SPAIN} ` +
+        `Zu einem spanischen Wort oder Satz lieferst du die deutsche Übersetzung und hilfreiche Felder. ` +
+        `${JSON_RULE} Nutze exakt dieses Schema: ` +
+        `{"back": string (deutsche Übersetzung), "gender": "el"|"la"|null (nur bei Substantiven), ` +
+        `"example": string|null (kurzer, natürlicher spanischer Beispielsatz, wie man ihn in Spanien im Alltag wirklich sagt), ` +
+        `"exampleTrans": string|null (deutsche Übersetzung des Beispiels), ` +
+        `"notes": string|null (kurzer Hinweis, z. B. zur Grammatik, zum Register/umgangssprachlich oder zur typisch spanischen Verwendung), ` +
         `"type": "vocab"|"sentence"}.`,
     },
     { role: 'user', content: String(front) },
@@ -112,12 +124,14 @@ export async function splitToCards(chunk, { nativeLang = 'de', targetLang = 'es'
     {
       role: 'system',
       content:
-        `You extract Spanish (${targetLang}) vocabulary and useful phrases worth learning from a ` +
-        `pasted chat/text, for a native ${nativeLang} speaker. Skip trivial filler words. ` +
-        `${JSON_RULE} Return an array of objects with schema: ` +
-        `[{"front": string (Spanish), "back": string (German), "gender": "el"|"la"|null, ` +
+        `Du extrahierst aus einem eingefügten spanischen Text (z. B. einem Tandem-Chat) die ` +
+        `lernenswerten Vokabeln und nützlichen Wendungen für einen deutschen Muttersprachler. ` +
+        `${SPAIN} Lass triviale Füllwörter weg und bevorzuge alltagstaugliche, umgangssprachliche ` +
+        `Ausdrücke, die man in Spanien wirklich braucht. ` +
+        `${JSON_RULE} Gib ein Array von Objekten mit diesem Schema zurück: ` +
+        `[{"front": string (Spanisch), "back": string (Deutsch), "gender": "el"|"la"|null, ` +
         `"example": string|null, "exampleTrans": string|null, "type": "vocab"|"sentence"}]. ` +
-        `Return at most 25 items.`,
+        `Höchstens 25 Einträge.`,
     },
     { role: 'user', content: String(chunk) },
   ];
@@ -131,17 +145,21 @@ export async function assessProduction(prompt, userAnswer, { reference = '' } = 
     {
       role: 'system',
       content:
-        `You are a friendly Spanish tutor for a native German speaker. The student was asked to ` +
-        `say something in Spanish. Judge their answer, correct it, and explain errors briefly in German. ` +
-        `${JSON_RULE} Schema: {"correct": boolean, "corrected": string (best natural Spanish), ` +
-        `"feedback": string (brief German explanation of any errors, or praise if correct)}.`,
+        `Du bist ein freundlicher, lockerer Spanisch-Tutor für einen deutschen Muttersprachler. ` +
+        `${SPAIN} Der Lernende sollte etwas auf Spanisch sagen. Bewerte die Antwort, korrigiere sie ` +
+        `zu natürlichem, alltagstauglichem Spanisch aus Spanien und erkläre etwaige Fehler kurz auf Deutsch. ` +
+        `Wenn die Antwort zwar korrekt, aber sehr lehrbuchhaft ist, weise freundlich darauf hin, wie man es ` +
+        `in Spanien lockerer sagen würde. ` +
+        `${JSON_RULE} Schema: {"correct": boolean, "corrected": string (bestes natürliches Spanisch aus ` +
+        `Spanien, so wie man es dort wirklich sagt), "feedback": string (kurze deutsche Erklärung der ` +
+        `Fehler, oder Lob wenn korrekt)}.`,
     },
     {
       role: 'user',
       content:
-        `Prompt (German): ${prompt}\n` +
-        (reference ? `Reference Spanish answer: ${reference}\n` : '') +
-        `Student's Spanish answer: ${userAnswer}`,
+        `Aufgabe (Deutsch): ${prompt}\n` +
+        (reference ? `Referenz-Antwort (Spanisch): ${reference}\n` : '') +
+        `Antwort des Lernenden (Spanisch): ${userAnswer}`,
     },
   ];
   return parseJSON(await chat(messages, 'feedback'));
@@ -153,11 +171,12 @@ export async function generateVariants(card) {
     {
       role: 'system',
       content:
-        `You create study variants from a Spanish/German flashcard. ${JSON_RULE} ` +
-        `Schema: {"cloze": {"front": string (a Spanish sentence with the target replaced by ___), ` +
-        `"clozeAnswer": string (the hidden token), "back": string (full Spanish sentence)} | null, ` +
-        `"reverse": {"front": string (German prompt), "back": string (Spanish answer)} | null}. ` +
-        `Only include a cloze if a sensible fill-in-the-blank exists.`,
+        `Du erstellst Lernvarianten aus einer spanisch/deutschen Lernkarte. ${SPAIN} ` +
+        `Die Beispiel-/Cloze-Sätze sollen alltagstauglich und umgangssprachlich sein. ${JSON_RULE} ` +
+        `Schema: {"cloze": {"front": string (ein spanischer Satz, in dem das Zielwort durch ___ ersetzt ist), ` +
+        `"clozeAnswer": string (das verdeckte Wort), "back": string (vollständiger spanischer Satz)} | null, ` +
+        `"reverse": {"front": string (deutscher Prompt), "back": string (spanische Antwort)} | null}. ` +
+        `Nimm eine Cloze nur auf, wenn ein sinnvoller Lückentext möglich ist.`,
     },
     {
       role: 'user',
@@ -173,11 +192,12 @@ export async function estimateCEFR(sample) {
     {
       role: 'system',
       content:
-        `You give a DELIBERATELY ROUGH Spanish CEFR orientation (a range like "A2–B1"), not a precise ` +
-        `score, from a sample of the learner's flashcards and their retention stats. Identify under- ` +
-        `represented grammar areas (e.g. past tenses, subjunctive) to focus on. Answer in German. ` +
-        `${JSON_RULE} Schema: {"range": string (e.g. "A2–B1"), "summary": string (2-3 sentences, German), ` +
-        `"gaps": string[] (grammar/topic areas to focus on, German)}.`,
+        `Du gibst eine BEWUSST GROBE Einschätzung des Spanisch-Niveaus nach GER (eine Spanne wie "A2-B1"), ` +
+        `keinen exakten Wert, basierend auf einer Stichprobe der Lernkarten und ihren Retention-Statistiken. ` +
+        `${SPAIN} Berücksichtige dabei auch typisch spanische Alltagssprache. Benenne unterrepräsentierte ` +
+        `Grammatikbereiche (z. B. Vergangenheitszeiten, Subjuntivo), auf die man sich konzentrieren sollte. ` +
+        `Antworte auf Deutsch. ${JSON_RULE} Schema: {"range": string (z. B. "A2-B1"), ` +
+        `"summary": string (2-3 Sätze, Deutsch), "gaps": string[] (Grammatik-/Themenbereiche zum Fokussieren, Deutsch)}.`,
     },
     { role: 'user', content: JSON.stringify(sample) },
   ];
@@ -190,9 +210,10 @@ export async function explainGrammar(card) {
     {
       role: 'system',
       content:
-        `You are a concise Spanish grammar tutor for a native German speaker. Explain the grammar of ` +
-        `the given card in 2-4 short sentences, in German (e.g. why subjunctive, ser vs estar, gender). ` +
-        `Plain text, no JSON.`,
+        `Du bist ein knapper Spanisch-Grammatik-Tutor für einen deutschen Muttersprachler. ${SPAIN} ` +
+        `Erkläre die Grammatik der Karte in 2-4 kurzen Sätzen auf Deutsch (z. B. warum Subjuntivo, ` +
+        `ser vs. estar, Genus). Weise bei Bedarf kurz auf die umgangssprachliche oder typisch spanische ` +
+        `Verwendung hin. Reiner Text, kein JSON.`,
     },
     {
       role: 'user',
