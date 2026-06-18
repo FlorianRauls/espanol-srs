@@ -2,7 +2,7 @@
 // Only the static shell is cached. LLM calls (cross-origin POST to Azure) are never
 // intercepted, so the review loop works offline while LLM features simply need network.
 
-const CACHE = 'espanol-srs-v2';
+const CACHE = 'espanol-srs-v3';
 const SHELL = [
   './',
   './index.html',
@@ -43,19 +43,18 @@ self.addEventListener('fetch', event => {
   // Only handle same-origin GET requests; let everything else (Azure POST, etc.) pass through.
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
 
-  event.respondWith(
-    caches.match(req).then(cached => {
-      if (cached) return cached;
-      return fetch(req)
-        .then(res => {
-          // Cache successful basic responses for next time.
-          if (res && res.status === 200 && res.type === 'basic') {
-            const copy = res.clone();
-            caches.open(CACHE).then(c => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => cached); // offline and uncached → undefined (browser shows its own error)
-    })
-  );
+  // Stale-while-revalidate: serve from cache instantly (fast, offline-friendly) AND fetch
+  // a fresh copy in the background so code updates propagate without a manual cache bump.
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(req);
+    const networkPromise = fetch(req)
+      .then(res => {
+        if (res && res.status === 200 && res.type === 'basic') cache.put(req, res.clone());
+        return res;
+      })
+      .catch(() => null);
+    event.waitUntil(networkPromise); // keep updating the cache even after responding
+    return cached || (await networkPromise);
+  })());
 });

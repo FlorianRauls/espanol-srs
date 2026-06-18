@@ -1,6 +1,6 @@
 // exportImport.js — JSON backup (the safety net, since there is no sync) and Anki CSV export.
 
-import { getAllCards, getAllReviewLogs, getSettings, replaceAll } from './db.js';
+import { getAllCards, getAllReviewLogs, getAllUsageLogs, getSettings, replaceAll } from './db.js';
 
 function triggerDownload(filename, mimeType, content) {
   const blob = new Blob([content], { type: mimeType });
@@ -25,16 +25,17 @@ function dateStamp() {
 // ---- Full JSON backup (cards + review log + settings WITHOUT the API key) ----
 
 export async function exportJSON() {
-  const [cards, reviewLog, settings] = await Promise.all([
-    getAllCards(), getAllReviewLogs(), getSettings(),
+  const [cards, reviewLog, usageLog, settings] = await Promise.all([
+    getAllCards(), getAllReviewLogs(), getAllUsageLogs(), getSettings(),
   ]);
   const { azureApiKey, ...settingsSansKey } = settings; // never export the key
   const payload = {
     app: 'spanish-srs',
-    version: 1,
+    version: 2,
     exportedAt: Date.now(),
     cards,
     reviewLog,
+    usageLog,
     settings: settingsSansKey,
   };
   triggerDownload(`spanish-srs-backup-${dateStamp()}.json`, 'application/json',
@@ -49,6 +50,7 @@ export async function importJSONFromText(text) {
   await replaceAll({
     cards: data.cards,
     reviewLog: Array.isArray(data.reviewLog) ? data.reviewLog : [],
+    usageLog: Array.isArray(data.usageLog) ? data.usageLog : [],
     settings: data.settings || null,
   });
   return { cards: data.cards.length, reviewLog: (data.reviewLog || []).length };

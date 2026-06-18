@@ -3,7 +3,7 @@
 // Stores: cards (keyPath id), reviewLog (append-only, keyPath id), settings (keyPath key).
 
 const DB_NAME = 'spanish-srs';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let _dbPromise = null;
 
@@ -26,6 +26,11 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' });
+      }
+      // v2: append-only log of LLM token usage (for the cost estimate).
+      if (!db.objectStoreNames.contains('usageLog')) {
+        const u = db.createObjectStore('usageLog', { keyPath: 'id' });
+        u.createIndex('ts', 'ts');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -90,6 +95,17 @@ export async function getAllReviewLogs() {
   return reqToPromise(db.transaction('reviewLog').objectStore('reviewLog').getAll());
 }
 
+// ---- Usage log (append-only — token usage per LLM call, for cost estimate) ----
+
+export async function addUsageLog(entry) {
+  return tx('usageLog', 'readwrite', t => t.objectStore('usageLog').add(entry));
+}
+
+export async function getAllUsageLogs() {
+  const db = await openDB();
+  return reqToPromise(db.transaction('usageLog').objectStore('usageLog').getAll());
+}
+
 // ---- Settings (single logical object, stored under one key) ----
 
 const SETTINGS_KEY = 'app';
@@ -102,6 +118,12 @@ const DEFAULT_SETTINGS = {
   newCardsPerDay: 15,
   targetLang: 'es',
   nativeLang: 'de',
+  // Prices in USD per 1M tokens, used only for the local cost estimate.
+  // Defaults reflect gpt-5-mini (Global Standard) for both roles.
+  priceGenIn: 0.25,
+  priceGenOut: 2.00,
+  priceFbIn: 0.25,
+  priceFbOut: 2.00,
 };
 
 export async function getSettings() {
@@ -117,16 +139,19 @@ export async function saveSettings(settings) {
 
 // ---- Bulk replace (used by JSON import) ----
 
-export async function replaceAll({ cards, reviewLog, settings }) {
+export async function replaceAll({ cards, reviewLog, usageLog, settings }) {
   // Wipe and restore in one transaction so a failed import can't leave a half state.
-  return tx(['cards', 'reviewLog', 'settings'], 'readwrite', t => {
+  return tx(['cards', 'reviewLog', 'usageLog', 'settings'], 'readwrite', t => {
     const cs = t.objectStore('cards');
     const ls = t.objectStore('reviewLog');
+    const us = t.objectStore('usageLog');
     const ss = t.objectStore('settings');
     cs.clear();
     ls.clear();
+    us.clear();
     (cards || []).forEach(c => cs.put(c));
     (reviewLog || []).forEach(l => ls.put(l));
+    (usageLog || []).forEach(u => us.put(u));
     if (settings) {
       // Keep any existing API key if the import (which omits it) doesn't carry one.
       ss.put({ key: SETTINGS_KEY, value: { ...DEFAULT_SETTINGS, ...settings } });

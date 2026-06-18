@@ -5,7 +5,17 @@
 // where azureEndpoint ends in /openai/v1/. The `model` field is the Foundry DEPLOYMENT
 // name (settings.modelGenerate for cheap tasks, settings.modelFeedback for stronger tasks).
 
-import { getSettings } from './db.js';
+import { getSettings, addUsageLog } from './db.js';
+
+// Best-effort: record token usage for the local cost estimate. Never throws into the caller.
+function recordUsage(task, modelKind, usage) {
+  if (!usage) return;
+  const inTok = usage.prompt_tokens ?? usage.promptTokens ?? 0;
+  const outTok = usage.completion_tokens ?? usage.completionTokens ?? 0;
+  if (!inTok && !outTok) return;
+  addUsageLog({ id: crypto.randomUUID(), ts: Date.now(), task, modelKind, inTok, outTok })
+    .catch(() => { /* usage logging is non-essential */ });
+}
 
 export class LLMNotConfiguredError extends Error {
   constructor() {
@@ -26,7 +36,7 @@ function normalizeEndpoint(endpoint) {
 
 // Low-level call. messages: [{role, content}]. modelKind: 'generate' | 'feedback'.
 // Returns the assistant message text.
-async function chat(messages, modelKind = 'generate') {
+async function chat(messages, modelKind = 'generate', task = 'misc') {
   const s = await getSettings();
   const deployment = modelKind === 'feedback'
     ? (s.modelFeedback || s.modelGenerate)
@@ -62,6 +72,7 @@ async function chat(messages, modelKind = 'generate') {
     throw new Error(`Azure error ${res.status}: ${detail.slice(0, 300) || res.statusText}`);
   }
   const data = await res.json();
+  recordUsage(task, modelKind, data?.usage);
   const text = data?.choices?.[0]?.message?.content;
   if (typeof text !== 'string') throw new Error('Azure returned an unexpected response shape.');
   return text;
@@ -115,7 +126,7 @@ export async function autofillCard(front, { nativeLang = 'de', targetLang = 'es'
     },
     { role: 'user', content: String(front) },
   ];
-  return parseJSON(await chat(messages, 'generate'));
+  return parseJSON(await chat(messages, 'generate', 'autofill'));
 }
 
 // ---- Task 9: split a pasted chunk of Spanish into candidate cards ----
@@ -135,7 +146,7 @@ export async function splitToCards(chunk, { nativeLang = 'de', targetLang = 'es'
     },
     { role: 'user', content: String(chunk) },
   ];
-  const out = parseJSON(await chat(messages, 'generate'));
+  const out = parseJSON(await chat(messages, 'generate', 'tandem'));
   return Array.isArray(out) ? out : (out.cards || []);
 }
 
@@ -162,7 +173,7 @@ export async function assessProduction(prompt, userAnswer, { reference = '' } = 
         `Antwort des Lernenden (Spanisch): ${userAnswer}`,
     },
   ];
-  return parseJSON(await chat(messages, 'feedback'));
+  return parseJSON(await chat(messages, 'feedback', 'produce'));
 }
 
 // ---- Task 11: generate cloze and/or reverse-direction variants from a card ----
@@ -183,7 +194,7 @@ export async function generateVariants(card) {
       content: `front (es): ${card.front}\nback (de): ${card.back}\nexample: ${card.example || ''}`,
     },
   ];
-  return parseJSON(await chat(messages, 'generate'));
+  return parseJSON(await chat(messages, 'generate', 'variants'));
 }
 
 // ---- Task 13: rough CEFR orientation from a performance-weighted card sample ----
@@ -201,7 +212,7 @@ export async function estimateCEFR(sample) {
     },
     { role: 'user', content: JSON.stringify(sample) },
   ];
-  return parseJSON(await chat(messages, 'feedback'));
+  return parseJSON(await chat(messages, 'feedback', 'cefr'));
 }
 
 // ---- Task 14: per-card grammar explanation ----
@@ -220,5 +231,5 @@ export async function explainGrammar(card) {
       content: `front (es): ${card.front}\nback (de): ${card.back}\nexample: ${card.example || ''}\nnotes: ${card.notes || ''}`,
     },
   ];
-  return (await chat(messages, 'feedback')).trim();
+  return (await chat(messages, 'feedback', 'grammar')).trim();
 }

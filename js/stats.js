@@ -108,6 +108,36 @@ export function performanceWeightedSample(cards, max = 40) {
   }));
 }
 
+// Token usage + estimated cost (USD), derived from the append-only usage log and
+// the per-role prices in settings.
+export function usageSummary(usageLog, settings, now = Date.now()) {
+  const priceFor = (kind, dir) => {
+    if (kind === 'feedback') return dir === 'in' ? (settings.priceFbIn || 0) : (settings.priceFbOut || 0);
+    return dir === 'in' ? (settings.priceGenIn || 0) : (settings.priceGenOut || 0);
+  };
+  const costOf = e => (e.inTok || 0) / 1e6 * priceFor(e.modelKind, 'in')
+    + (e.outTok || 0) / 1e6 * priceFor(e.modelKind, 'out');
+
+  const monthStart = new Date(now); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+
+  const out = {
+    calls: usageLog.length, totalIn: 0, totalOut: 0,
+    totalCost: 0, monthCost: 0, todayCost: 0, byTask: {},
+  };
+  for (const e of usageLog) {
+    const c = costOf(e);
+    out.totalIn += e.inTok || 0;
+    out.totalOut += e.outTok || 0;
+    out.totalCost += c;
+    if (e.ts >= monthStart.getTime()) out.monthCost += c;
+    if (e.ts >= dayStart.getTime()) out.todayCost += c;
+    const t = out.byTask[e.task] || (out.byTask[e.task] = { calls: 0, inTok: 0, outTok: 0, cost: 0 });
+    t.calls++; t.inTok += e.inTok || 0; t.outTok += e.outTok || 0; t.cost += c;
+  }
+  return out;
+}
+
 export function summarize(cards, reviewLog, now = Date.now()) {
   return {
     retention: retentionRate(reviewLog),

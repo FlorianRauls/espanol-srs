@@ -599,9 +599,19 @@ VIEWS.produce = async function produceView() {
 // ============================================================
 // STATS
 // ============================================================
+const TASK_LABELS = {
+  autofill: 'Auto-Fill', tandem: 'Tandem-Import', variants: 'Varianten',
+  produce: 'Aktiv üben', grammar: 'Grammatik', cefr: 'CEFR', misc: 'Sonstiges',
+};
+const fmtUSD = n => '$' + (n < 1 ? n.toFixed(4) : n.toFixed(2));
+const fmtNum = n => Math.round(n).toLocaleString('de-DE');
+
 VIEWS.stats = async function statsView() {
-  const [cards, logs] = await Promise.all([db.getAllCards(), db.getAllReviewLogs()]);
+  const [cards, logs, usageLog, settings] = await Promise.all([
+    db.getAllCards(), db.getAllReviewLogs(), db.getAllUsageLogs(), db.getSettings(),
+  ]);
   const s = stats.summarize(cards, logs);
+  const u = stats.usageSummary(usageLog, settings);
   const ret = s.retention == null ? '—' : Math.round(s.retention * 100) + '%';
 
   const fcMax = Math.max(1, ...s.forecast.map(f => f.count));
@@ -651,6 +661,30 @@ VIEWS.stats = async function statsView() {
 
     <h2 class="section-title">Aktivität</h2>
     <div class="card-surface"><div class="heatmap">${heatCells}</div></div>
+
+    <h2 class="section-title">KI-Verbrauch & Kosten (geschätzt)</h2>
+    ${u.calls === 0
+      ? '<div class="card-surface"><p class="muted">Noch keine KI-Aufrufe. Sobald du Auto-Fill, Tandem-Import, Aktiv üben usw. nutzt, erscheint hier dein geschätzter Verbrauch.</p></div>'
+      : `<div class="stat-grid">
+          <div class="stat-box"><div class="v">${fmtUSD(u.totalCost)}</div><div class="k">Gesamt (USD)</div></div>
+          <div class="stat-box"><div class="v">${fmtUSD(u.monthCost)}</div><div class="k">Diesen Monat</div></div>
+          <div class="stat-box"><div class="v">${fmtUSD(u.todayCost)}</div><div class="k">Heute</div></div>
+          <div class="stat-box"><div class="v">${u.calls}</div><div class="k">KI-Aufrufe</div></div>
+        </div>
+        <div class="card-surface" style="margin-top:11px">
+          <p class="muted" style="margin:0 0 10px">Tokens gesamt: <strong>${fmtNum(u.totalIn)}</strong> rein · <strong>${fmtNum(u.totalOut)}</strong> raus</p>
+          <div class="list">
+            ${Object.entries(u.byTask).sort((a, b) => b[1].cost - a[1].cost).map(([task, t]) => `
+              <div class="list-item">
+                <div class="li-main">
+                  <div class="li-front" style="font-size:16px">${esc(TASK_LABELS[task] || task)}</div>
+                  <div class="li-back">${t.calls}× · ${fmtNum(t.inTok)}/${fmtNum(t.outTok)} Tok</div>
+                </div>
+                <div class="li-state">${fmtUSD(t.cost)}</div>
+              </div>`).join('')}
+          </div>
+          <p class="caveat">Schätzung auf Basis der Preise in den Einstellungen (${fmtUSD(settings.priceGenIn)}/${fmtUSD(settings.priceGenOut)} Generierung, ${fmtUSD(settings.priceFbIn)}/${fmtUSD(settings.priceFbOut)} Feedback je 1M Tokens). Maßgeblich ist die echte Azure-Abrechnung.</p>
+        </div>`}
 
     <h2 class="section-title">CEFR-Orientierung</h2>
     <div class="card-surface" id="cefr-box">
@@ -775,15 +809,31 @@ VIEWS.settings = async function settingsView() {
       </div>
       <div id="set-msg"></div>
       <button class="btn btn-primary btn-block" id="saveSettings">Speichern</button>
+    </div>
+
+    <div class="card-surface stack" style="margin-top:16px">
+      <h2 class="section-title" style="margin-top:0">Kosten-Schätzung</h2>
+      <p class="help">Nur für die Verbrauchsanzeige im Stats-Tab. Preise in USD pro 1M Tokens (Standard: gpt-5-mini).</p>
+      <div class="row-2">
+        <div class="field"><label>Generierung — Input</label><input class="input" id="s-pgi" type="number" step="0.01" min="0" value="${esc(s.priceGenIn)}" /></div>
+        <div class="field"><label>Generierung — Output</label><input class="input" id="s-pgo" type="number" step="0.01" min="0" value="${esc(s.priceGenOut)}" /></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Feedback — Input</label><input class="input" id="s-pfi" type="number" step="0.01" min="0" value="${esc(s.priceFbIn)}" /></div>
+        <div class="field"><label>Feedback — Output</label><input class="input" id="s-pfo" type="number" step="0.01" min="0" value="${esc(s.priceFbOut)}" /></div>
+      </div>
     </div>`;
 
   $('#saveSettings').addEventListener('click', async () => {
+    const num = (id, fb) => { const v = parseFloat($(id).value); return Number.isFinite(v) && v >= 0 ? v : fb; };
     const next = {
       azureEndpoint: $('#s-endpoint').value.trim(),
       azureApiKey: $('#s-key').value.trim(),
       modelGenerate: $('#s-gen').value.trim(),
       modelFeedback: $('#s-fb').value.trim(),
       newCardsPerDay: Math.max(0, parseInt($('#s-new').value, 10) || 0),
+      priceGenIn: num('#s-pgi', 0.25), priceGenOut: num('#s-pgo', 2.00),
+      priceFbIn: num('#s-pfi', 0.25), priceFbOut: num('#s-pfo', 2.00),
       targetLang: 'es', nativeLang: 'de',
     };
     await db.saveSettings(next);
