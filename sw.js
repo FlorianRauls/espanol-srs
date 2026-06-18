@@ -2,7 +2,7 @@
 // Only the static shell is cached. LLM calls (cross-origin POST to Azure) are never
 // intercepted, so the review loop works offline while LLM features simply need network.
 
-const CACHE = 'espanol-srs-v3';
+const CACHE = 'espanol-srs-v4';
 const SHELL = [
   './',
   './index.html',

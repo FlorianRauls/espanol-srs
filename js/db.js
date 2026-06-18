@@ -95,6 +95,11 @@ export async function getAllReviewLogs() {
   return reqToPromise(db.transaction('reviewLog').objectStore('reviewLog').getAll());
 }
 
+// Delete a single log entry — used only by the immediate "undo last rating" action.
+export async function deleteReviewLog(id) {
+  return tx('reviewLog', 'readwrite', t => t.objectStore('reviewLog').delete(id));
+}
+
 // ---- Usage log (append-only — token usage per LLM call, for cost estimate) ----
 
 export async function addUsageLog(entry) {

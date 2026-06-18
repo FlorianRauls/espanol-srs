@@ -197,6 +197,31 @@ export async function generateVariants(card) {
   return parseJSON(await chat(messages, 'generate', 'variants'));
 }
 
+// ---- Conjugation drill generator: make cloze cards for a tense/mood (one-time cost) ----
+export async function generateConjugationCards(tense, verbs = [], count = 8) {
+  const messages = [
+    {
+      role: 'system',
+      content:
+        `Du erstellst Übungskarten für spanische Verbkonjugation als Lückentext. ${SPAIN} ` +
+        `Erzeuge ${count} kurze, alltagstaugliche spanische Beispielsätze in der Zeit/Modus "${tense}", ` +
+        `in denen GENAU EIN konjugiertes Verb durch ___ ersetzt ist. Variiere Person und Numerus ` +
+        `(inkl. vosotros). ${JSON_RULE} Array-Schema: ` +
+        `[{"front": string (Satz mit ___), "clozeAnswer": string (die korrekte konjugierte Verbform), ` +
+        `"back": string (vollständiger Satz ohne Lücke), "exampleTrans": string (deutsche Übersetzung), ` +
+        `"infinitive": string (Infinitiv des Verbs)}].`,
+    },
+    {
+      role: 'user',
+      content: verbs.length
+        ? `Verwende diese Verben: ${verbs.join(', ')}.`
+        : 'Nutze häufige spanische Alltagsverben (ser, estar, tener, ir, hacer, poder, decir, ver, dar, querer …).',
+    },
+  ];
+  const out = parseJSON(await chat(messages, 'generate', 'conjug'));
+  return Array.isArray(out) ? out : (out.cards || []);
+}
+
 // ---- Task 13: rough CEFR orientation from a performance-weighted card sample ----
 export async function estimateCEFR(sample) {
   const messages = [
